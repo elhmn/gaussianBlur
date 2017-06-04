@@ -8,6 +8,7 @@
 #include <fcntl.h>
 
 #define TAB			"\t"
+#define ERROR(x)	error((x), __FILE__, __LINE__)
 
 /*
 ** This constants are set by the compiler for test purpose
@@ -18,13 +19,14 @@
 **
 */
 
+
 /*
 ** The t_e_compress enum will be used to certify
 ** that there is no compression in the bmp because
 ** i won't take any compression into consideration
 */
 
-typedef enum		e_compress
+typedef enum			e_compress
 {
 	BI_RGB = 0,
 	BI_RLE8,
@@ -32,20 +34,20 @@ typedef enum		e_compress
 	BI_BITFIELDS,
 	BI_JPEG,
 	BI_PNG,
-}					t_e_compress;
+}						t_e_compress;
 
-typedef struct		s_bmp_header
+typedef struct			s_bmp_header
 {
-	unsigned char	type[2];
-	uint32_t		file_sz;
-	uint16_t		creator1;
-	uint16_t		creator2;
-	uint32_t		offset;
+	unsigned char		type[2];
+	uint32_t			file_sz;
+	uint16_t			creator1;
+	uint16_t			creator2;
+	uint32_t			offset;
 
 /*
 ** non member functions
 */
-	void			dump(void)
+	void				dump(void)
 	{
 		std::cout << "bmp_header : " << std::endl \
 		<< TAB << "type : " << this->type << std::endl \
@@ -55,31 +57,31 @@ typedef struct		s_bmp_header
 		<< TAB << "offset : " << this->offset << std::endl \
 		<< "END" << std::endl;
 	};
-}					t_bmp_header;
+}						t_bmp_header;
 
 /*
 ** The structure bellow is only relevant
 ** for Windows V3 DIB info header
 */
 
-typedef struct		s_bmpinfo_header
+typedef struct			s_bmpinfo_header
 {
-	uint32_t		header_sz;
-	int32_t			width;
-	int32_t			height;
-	uint16_t		nplanes;
-	uint16_t		color_depth;
-	uint32_t		compress_t;
-	uint32_t		image_sz;
-	uint32_t		hres;
-	uint32_t		vres;
-	uint32_t		n_colors;
-	uint32_t		n_imp_colors;
+	uint32_t			header_sz;
+	int32_t				width;
+	int32_t				height;
+	uint16_t			nplanes;
+	uint16_t			color_depth;
+	uint32_t			compress_t;
+	uint32_t			image_sz;
+	uint32_t			hres;
+	uint32_t			vres;
+	uint32_t			n_colors;
+	uint32_t			n_imp_colors;
 
 /*
 ** non member functions
 */
-	void			dump(void)
+	void				dump(void)
 	{
 		std::cout << "bmp_info_header : " << std::endl \
 		<< TAB << "header_sz : " << this->header_sz << std::endl \
@@ -95,19 +97,32 @@ typedef struct		s_bmpinfo_header
 		<< TAB << "n_imp_colors : " << this->n_imp_colors << std::endl \
 		<< "END" << std::endl;
 	}
-}					t_bmpinfo_header;
+}						t_bmpinfo_header;
 
+/*
+** program env
+*/
 
+typedef struct			s_env
+{
+	unsigned char		headerData[54];
+	unsigned char		*imgData;
+	size_t				imgSize;
+	size_t				headerSize;
+	t_bmp_header		*bmp_header;
+	t_bmpinfo_header	*bmpinfo;
+}						t_env;
 
-static void			show_usage(void)
+static void				show_usage(void)
 {
 	std::cout << "usage : gbfilter input_file output_file kernel_size" \
 				<< " tile_width tile_height" << std::endl;
 }
 
-static void			error(const char *msg = 0)
+static void				error(const char *msg = 0,
+								const char *file = 0, int line = 0)
 {
-	std::cout << "Error : " << __FILE__ << " : " << __LINE__;
+	std::cout << "Error : " << file << " : " << line;
 	if (msg)
 		std::cout << " : " << msg;
 	std::cout << std::endl;
@@ -116,22 +131,23 @@ static void			error(const char *msg = 0)
 
 /*
 ** TODO
+** Correct error print __FILE__ and __LINE__
 ** Check parameters count
 ** Check that input_file has the bmp extension (maybe is not relevant)
 ** Check that the input_file exists
 **  Read BMP file
 */
 
-void				init_struct(t_bmp_header **bmp_header,
-								t_bmpinfo_header **bmpinfo)
+void					init_struct(t_bmp_header **bmp_header,
+									t_bmpinfo_header **bmpinfo)
 {
 	if (!(*bmp_header = new s_bmp_header()))
-		error("BAD ALLOC");
+		ERROR("BAD ALLOC");
 	if (!(*bmpinfo = new s_bmpinfo_header()))
-		error("BAD ALLOC");
+		ERROR("BAD ALLOC");
 }
 
-void				destroy_struct(t_bmp_header **bmp_header,
+void					destroy_struct(t_bmp_header **bmp_header,
 									t_bmpinfo_header **bmpinfo)
 {
 	if (bmp_header)
@@ -146,11 +162,12 @@ void				destroy_struct(t_bmp_header **bmp_header,
 	}
 }
 
-void				set_structure(unsigned char *buf, t_bmp_header *bmp_header,
+void					set_structure(unsigned char *buf,
+									t_bmp_header *bmp_header,
 									t_bmpinfo_header *bmpinfo)
 {
 	if (!bmp_header || !bmpinfo)
-		error("Empty pointer");
+		ERROR("Empty pointer");
 
 /*
 ** BMP header data parsing
@@ -169,16 +186,17 @@ void				set_structure(unsigned char *buf, t_bmp_header *bmp_header,
 ** BMP header info data parsing
 */
 	bmpinfo->header_sz = buf[14];
-	//if () header != 40 warning the blabla type is not correct it may cause the program to fail
+	if (bmpinfo->header_sz != 40)
+		ERROR("BMP image info header > 40");
 	bmpinfo->width = *(int32_t*)(buf + 18);
 	bmpinfo->height = *(int32_t*)(buf + 22);
 	bmpinfo->nplanes = *(uint16_t*)(buf + 26);
 	bmpinfo->color_depth = *(uint16_t*)(buf + 28);
 	if (bmpinfo->color_depth != 24)
-		error("Progam only handle 24pbb files");
+		ERROR("Progam only handle 24pbb files");
 	bmpinfo->compress_t = *(uint32_t*)(buf + 30);
 	if (bmpinfo->compress_t != BI_RGB)
-		error("Program does'nt not handle compressed files");
+		ERROR("Program does'nt not handle compressed files");
 	bmpinfo->image_sz = *(uint32_t*)(buf + 34);
 	bmpinfo->hres = *(uint32_t*)(buf + 38);
 	bmpinfo->vres = *(uint32_t*)(buf + 42);
@@ -190,41 +208,94 @@ void				set_structure(unsigned char *buf, t_bmp_header *bmp_header,
 #endif
 }
 
-void				readFile(char *filePath)
+void					readFile(t_env *env, char *filePath)
 {
 	int					fd;
-	unsigned char		buf[54];
-	t_bmp_header		*bmp_header;
-	t_bmpinfo_header	*bmpinfo;
+	int					junkBytes;
+	size_t				bufSize;
 
 	fd = 42;
+	if (!env)
+		ERROR("env set NULL");
+	bufSize = sizeof(env->headerData);
 	if (!filePath)
-		error("filePath set to NULL");
+		ERROR("filePath set to NULL");
 	if ((fd = open(filePath, O_RDONLY)) < 0)
 	{
 		perror(filePath);
-		error();
+		ERROR("");
 	}
-	init_struct(&bmp_header, &bmpinfo);
-	if (read(fd, (void*)buf, sizeof(buf)) < 0)
+	init_struct(&env->bmp_header, &env->bmpinfo);
+	env->headerSize = bufSize;
+	if (read(fd, (void*)env->headerData, bufSize) < 0)
 	{
 		perror("filePath while reading");
-		error();
+		ERROR("");
 	}
-	set_structure(buf, bmp_header, bmpinfo);
+	set_structure(env->headerData, env->bmp_header, env->bmpinfo);
+	junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
+	std::cout << "junkBytes = " << junkBytes << std::endl;
+ 	bufSize = (env->bmpinfo->width * 3 + junkBytes) * env->bmpinfo->height;
+	env->imgSize = bufSize;
+	if (!(env->imgData = new unsigned char[bufSize]))
+		ERROR("BAD ALLOC");
+	if (pread(fd, (void*)env->imgData, bufSize, env->bmp_header->offset) < 0)
+	{
+		perror("filePath while reading");
+		ERROR("");
+	}
+// 	std::cout << env->imgData << std::endl;//_DEBUG_//
+//	get_imgData(env->imgData);
 	//read file data
-	destroy_struct(&bmp_header, &bmpinfo);
+	close(fd);
+//	destroy_struct(&bmp_header, &bmpinfo);
 }
 
-int					main(int ac, char **av)
+void					writeFile(t_env *env, char *filePath)
 {
+	int					fd;
+
+	fd = 42;
+	if (!env)
+		ERROR("env set to NULL");
+	if (!filePath)
+		ERROR("filePath set to NULL");
+	if ((fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC,
+				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0)
+	{
+		perror(filePath);
+		ERROR("");
+	}
+	if ((write(fd, env->headerData, env->headerSize)) < 0)
+	{
+		perror(filePath);
+		ERROR("");
+	}
+	if ((pwrite(fd, env->imgData, env->imgSize,
+			env->bmp_header->offset)) < 0)
+	{
+		perror(filePath);
+		ERROR("");
+	}
+	close(fd);
+}
+
+
+int						main(int ac, char **av)
+{
+	t_env	*env;
+
 	if (ac != 6)
 		show_usage();
 	else
 	{
 		if (!av)
-			error();
-		readFile(av[1]);
+			ERROR("");
+		if (!(env = new t_env))
+			ERROR("BAD ALLOC");
+		readFile(env, av[1]);
+		writeFile(env, av[2]);
+		//destroy(env);
 	}
 	return (0);
 }
