@@ -131,7 +131,6 @@ static void				error(const char *msg = 0,
 
 /*
 ** TODO
-** Correct error print __FILE__ and __LINE__
 ** Check parameters count
 ** Check that input_file has the bmp extension (maybe is not relevant)
 ** Check that the input_file exists
@@ -160,6 +159,17 @@ void					destroy_struct(t_bmp_header **bmp_header,
 		delete (*bmpinfo);
 		*bmpinfo = NULL;
 	}
+}
+
+void					destroy(t_env **env)
+{
+	if (!env || !*env)
+		ERROR("env or *env set to NULL");
+	destroy_struct(&env[0]->bmp_header, &env[0]->bmpinfo);
+	if (env[0]->imgData)
+		delete env[0]->imgData;
+	env[0]->imgData = NULL;
+	*env = NULL;
 }
 
 void					set_structure(unsigned char *buf,
@@ -208,7 +218,7 @@ void					set_structure(unsigned char *buf,
 #endif
 }
 
-void					readFile(t_env *env, char *filePath)
+void					readFile(t_env *env, const char *filePath)
 {
 	int					fd;
 	int					junkBytes;
@@ -234,7 +244,6 @@ void					readFile(t_env *env, char *filePath)
 	}
 	set_structure(env->headerData, env->bmp_header, env->bmpinfo);
 	junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
-	std::cout << "junkBytes = " << junkBytes << std::endl;
  	bufSize = (env->bmpinfo->width * 3 + junkBytes) * env->bmpinfo->height;
 	env->imgSize = bufSize;
 	if (!(env->imgData = new unsigned char[bufSize]))
@@ -244,14 +253,85 @@ void					readFile(t_env *env, char *filePath)
 		perror("filePath while reading");
 		ERROR("");
 	}
-// 	std::cout << env->imgData << std::endl;//_DEBUG_//
-//	get_imgData(env->imgData);
-	//read file data
 	close(fd);
-//	destroy_struct(&bmp_header, &bmpinfo);
 }
 
-void					writeFile(t_env *env, char *filePath)
+static void				parse(t_env *env, float *kSize, int *tw, int *th,
+							const char *kernel_sz, const char *tile_w,
+							const char *tile_h)
+
+{
+	if (!env)
+		ERROR("env set to NULL");
+	if (!kSize || !tw || !th)
+		ERROR("kSize or tw or th set to NULL");
+	*kSize = atof(kernel_sz);
+	*tw = atol(tile_w);
+	*th = atol(tile_h);
+	if (*tw > env->bmpinfo->width)
+		ERROR("tile width can't be greater than image width");
+	if (*tw < 0)
+		ERROR("tile width can't be a negative value");
+	if (*th > env->bmpinfo->height)
+		ERROR("tile height can't be greater than image height");
+	if (*th < 0)
+		ERROR("tile height can't be a negative value");
+	if (*kSize < 0)
+		ERROR("tile kernelSize can't be a negative value");
+
+#ifdef DEBUG
+	std::cout << "BLUR PARAM :" << std::endl;
+	std::cout << TAB << "kernel size = " << *kSize << std::endl;
+	std::cout << TAB << "tile width = " << *tw << std::endl;
+	std::cout << TAB << "tile height = " << *th << std::endl;
+	std::cout << "END" << std::endl;
+#endif
+}
+
+void					gaussianBlur(t_env *env, const char *kernel_sz,
+							const char *tile_w, const char *tile_h)
+{
+	float				kSize;
+	int					tw;
+	int					th;
+
+	int					tileCount_w;
+	int					tileCount_h;
+	int					tileCount_x;
+	int					tileCount_y;
+
+	int					x;
+	int					y;
+
+	int					width;
+	int					height;
+	unsigned char		*data;
+
+	(void)x;
+	(void)y;
+	(void)data;
+	if (!env)
+		ERROR("env set to NULL");
+	parse(env, &kSize, &tw, &th, kernel_sz, tile_w, tile_h);
+	width = env->bmpinfo->width;
+	height = env->bmpinfo->height;
+	data = env->imgData;
+	tileCount_w = (width / tw) + 1;
+	tileCount_h = (height / th) + 1;
+	tileCount_x = -1;
+	while (++tileCount_x < tileCount_w)
+	{
+		tileCount_y = -1;
+		while (++tileCount_y < tileCount_h)
+		{
+
+// 			std::cout << tileCount_x << ", " << tileCount_y << std::endl;//_DEBUG_//
+		}
+	}
+// 	std::cout << "je suis gaussain blur" << std::endl;//_DEBUG_//
+}
+
+void					writeFile(t_env *env, const char *filePath)
 {
 	int					fd;
 
@@ -280,7 +360,6 @@ void					writeFile(t_env *env, char *filePath)
 	close(fd);
 }
 
-
 int						main(int ac, char **av)
 {
 	t_env	*env;
@@ -294,8 +373,9 @@ int						main(int ac, char **av)
 		if (!(env = new t_env))
 			ERROR("BAD ALLOC");
 		readFile(env, av[1]);
+		gaussianBlur(env, av[3], av[4], av[5]);
 		writeFile(env, av[2]);
-		//destroy(env);
+		destroy(&env);
 	}
 	return (0);
 }
