@@ -215,7 +215,7 @@ void					set_structure(unsigned char *buf,
 	bmpinfo->n_imp_colors = *(uint32_t*)(buf + 50);
 
 #ifdef DEBUG
-	bmpinfo->dump();//_DEBUG_//
+	bmpinfo->dump();
 #endif
 }
 
@@ -288,6 +288,21 @@ static void				parse(t_env *env, float *kSize, int *tw, int *th,
 #endif
 }
 
+void					pixel_put(t_env *env,
+							int x, int y, int r, int g, int b)
+{
+	int			data_w;
+
+	data_w = env->bmpinfo->width * 3 + env->junkBytes;
+	y = env->bmpinfo->height - y - 1;
+	if (x >= 0 && x < env->bmpinfo->width && y >= 0 && y < env->bmpinfo->height)
+	{
+		env->imgData[y * data_w + (x * 3)] = b;
+		env->imgData[y * data_w + (x * 3) + 1] = g;
+		env->imgData[y * data_w + (x * 3) + 2] = r;
+	}
+}
+
 void					gaussianBlur(t_env *env, const char *kernel_sz,
 							const char *tile_w, const char *tile_h)
 {
@@ -305,38 +320,40 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 
 	int					width;
 	int					height;
-	unsigned char		*data;
 
+	/*
 	(void)x;
 	(void)y;
+	(void)tileCount_x;
+	(void)tileCount_y;
+	(void)tileCount_w;
+	(void)tileCount_h;
 	(void)data;
+	*/
 	if (!env)
 		ERROR("env set to NULL");
 	parse(env, &kSize, &tw, &th, kernel_sz, tile_w, tile_h);
 	width = env->bmpinfo->width;
 	height = env->bmpinfo->height;
-	data = env->imgData;
 	tileCount_w = (width / tw) + 1;
 	tileCount_h = (height / th) + 1;
-	tileCount_x = -1;
-	while (++tileCount_x < tileCount_w)
+	tileCount_y = -1;
+	while (++tileCount_y < tileCount_h)
 	{
-		tileCount_y = -1;
-		while (++tileCount_y < tileCount_h)
+		tileCount_x = -1;
+		while (++tileCount_x < tileCount_w)
 		{
-// 			try to change imageData here
-			x = -1;
-			while (++x < tw)
+			y = -1;
+			while (++y < th)
 			{
-				y = -1;
-				while (++y < th)
+				x = -1;
+				while (++x < tw)
 				{
-					if (tileCount_x == 0 && tileCount_y == 0)
-					{
-						data[x * tw + y] = 0;
-						data[x * tw + y + 1] = 0;
-						data[x * tw + y + 2] = 0;
-					}
+#ifdef DEBUG
+					if (x == 0 || y == 0)
+						pixel_put(env, tileCount_x * tw + x,
+							tileCount_y * th + y, 0x00, 0x00, 0xFF);
+#endif
 				}
 			}
 // 			std::cout << tileCount_x << ", " << tileCount_y << std::endl;//_DEBUG_//
