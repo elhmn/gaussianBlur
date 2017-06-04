@@ -108,6 +108,7 @@ typedef struct			s_env
 	unsigned char		headerData[54];
 	unsigned char		*imgData;
 	size_t				imgSize;
+	int					junkBytes;
 	size_t				headerSize;
 	t_bmp_header		*bmp_header;
 	t_bmpinfo_header	*bmpinfo;
@@ -221,7 +222,6 @@ void					set_structure(unsigned char *buf,
 void					readFile(t_env *env, const char *filePath)
 {
 	int					fd;
-	int					junkBytes;
 	size_t				bufSize;
 
 	fd = 42;
@@ -243,8 +243,8 @@ void					readFile(t_env *env, const char *filePath)
 		ERROR("");
 	}
 	set_structure(env->headerData, env->bmp_header, env->bmpinfo);
-	junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
- 	bufSize = (env->bmpinfo->width * 3 + junkBytes) * env->bmpinfo->height;
+	env->junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
+ 	bufSize = (env->bmpinfo->width * 3 + env->junkBytes) * env->bmpinfo->height;
 	env->imgSize = bufSize;
 	if (!(env->imgData = new unsigned char[bufSize]))
 		ERROR("BAD ALLOC");
@@ -324,7 +324,21 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 		tileCount_y = -1;
 		while (++tileCount_y < tileCount_h)
 		{
-
+// 			try to change imageData here
+			x = -1;
+			while (++x < tw)
+			{
+				y = -1;
+				while (++y < th)
+				{
+					if (tileCount_x == 0 && tileCount_y == 0)
+					{
+						data[x * width + y] = 0;
+						data[x * width + y + 1] = 0;
+						data[x * width + y + 2] = 0;
+					}
+				}
+			}
 // 			std::cout << tileCount_x << ", " << tileCount_y << std::endl;//_DEBUG_//
 		}
 	}
