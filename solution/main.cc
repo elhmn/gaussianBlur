@@ -6,9 +6,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <cmath>
 
 #define TAB			"\t"
 #define ERROR(x)	error((x), __FILE__, __LINE__)
+
+# define LIMIT_SCOL(x)	(x > 1 || x < 0) ? ((x > 1) ? 1 : 0) : x
+# define LIMIT_COL(x)	(x > 255. || x < 0.) ? ((x > 255.) ? 255. : 0.) : x
 
 /*
 ** This constants are set by the compiler for test purpose
@@ -289,17 +293,115 @@ static void				parse(t_env *env, float *kSize, int *tw, int *th,
 }
 
 void					pixel_put(t_env *env,
-							int x, int y, int r, int g, int b)
+							int x, int y, uint8_t r,
+							uint8_t g, uint8_t b)
 {
 	int			data_w;
 
+	if (!env)
+		ERROR("env set to NULL");
+	if (!env->bmpinfo)
+		ERROR("env->bmpinfo set to NULL");
 	data_w = env->bmpinfo->width * 3 + env->junkBytes;
 	y = env->bmpinfo->height - y - 1;
-	if (x >= 0 && x < env->bmpinfo->width && y >= 0 && y < env->bmpinfo->height)
+	if (env->imgData && x >= 0 && x < env->bmpinfo->width
+			&& y >= 0 && y < env->bmpinfo->height)
 	{
-		env->imgData[y * data_w + (x * 3)] = b;
-		env->imgData[y * data_w + (x * 3) + 1] = g;
-		env->imgData[y * data_w + (x * 3) + 2] = r;
+		env->imgData[y * data_w + (x * 3)] = (uint8_t)LIMIT_COL(b);
+		env->imgData[y * data_w + (x * 3) + 1] = (uint8_t)LIMIT_COL(g);
+		env->imgData[y * data_w + (x * 3) + 2] = (uint8_t)LIMIT_COL(r);
+	}
+}
+
+void					getColor(t_env *env,
+							int x, int y, uint8_t *r,
+							uint8_t *g, uint8_t *b)
+{
+	int			data_w;
+
+	if (!env)
+		ERROR("env set to NULL");
+	if (!env->bmpinfo)
+		ERROR("env->bmpinfo set to NULL");
+	if (!r || !g || !b)
+		ERROR("r or g or b set to NULL");
+	data_w = env->bmpinfo->width * 3 + env->junkBytes;
+	y = env->bmpinfo->height - y - 1;
+	if (env->imgData && x >= 0 && x < env->bmpinfo->width
+			&& y >= 0 && y < env->bmpinfo->height)
+	{
+		*b = (uint8_t)env->imgData[y * data_w + (x * 3)];
+		*g = (uint8_t)env->imgData[y * data_w + (x * 3) + 1];
+		*r = (uint8_t)env->imgData[y * data_w + (x * 3) + 2];
+	}
+}
+
+static float			weight(int x, int y, float kSize)
+{
+	float	kSquare;
+	float	a;
+
+// 	std::cout << "kSize = " << kSize << std::endl;
+	kSquare = 2. * pow(kSize, 2);
+	a = pow((float)x, 2) + pow((float)y, 2) / kSquare;
+// 	std::cout << "ksquare = " << kSquare << std::endl;//_DEBUG_//
+// 	std::cout << "a = " << a << std::endl;//_DEBUG_//
+// 	std::cout << "exp() = " << exp(-a) << std::endl;//_DEBUG_//
+	return (exp(-a));
+}
+
+void					blur(t_env *env, int x, int y, float kSize)
+{
+	uint8_t		r;
+	uint8_t		g;
+	uint8_t		b;
+
+/*
+** new color values
+*/
+	float		n_r;
+	float		n_g;
+	float		n_b;
+
+	int			i;
+	int			j;
+	int			n;
+
+	float		s;
+	float		wTmp;
+
+	if (env->imgData && x >= 0 && x < env->bmpinfo->width
+			&& y >= 0 && y < env->bmpinfo->height)
+	{
+		s = 0;
+		n_r = 0;
+		n_g = 0;
+		n_b = 0;
+
+		/*
+		** n = kSize * (2...3) to avoid clipping
+		*/
+		n = kSize * 2;
+		i = -n - 1;
+		while (++i < n)
+		{
+			j = -n - 1;
+			while (++j < n)
+			{
+				getColor(env, x + j, y + i, &r, &g, &b);
+				wTmp = weight(j, i, kSize);
+				n_r += wTmp * r;
+				n_g += wTmp * g;
+				n_b += wTmp * b;
+				s += wTmp;
+			}
+		}
+		n_r /= s;
+		n_g /= s;
+		n_b /= s;
+ 		pixel_put(env, x, y, LIMIT_COL(n_r),
+ 					LIMIT_COL(n_g), LIMIT_COL(n_b));
+		getColor(env, x + j, y + i, &r, &g, &b);
 	}
 }
 
@@ -321,15 +423,6 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 	int					width;
 	int					height;
 
-	/*
-	(void)x;
-	(void)y;
-	(void)tileCount_x;
-	(void)tileCount_y;
-	(void)tileCount_w;
-	(void)tileCount_h;
-	(void)data;
-	*/
 	if (!env)
 		ERROR("env set to NULL");
 	parse(env, &kSize, &tw, &th, kernel_sz, tile_w, tile_h);
@@ -349,17 +442,18 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 				x = -1;
 				while (++x < tw)
 				{
+  					if (tileCount_x == 0 && tileCount_y == 0)
+ 						blur(env, tileCount_x * tw + x,
+ 								tileCount_y * th + y, kSize);
 #ifdef DEBUG
-					if (x == 0 || y == 0)
-						pixel_put(env, tileCount_x * tw + x,
-							tileCount_y * th + y, 0x00, 0x00, 0xFF);
+ 					if (x == 0 || y == 0)
+ 						pixel_put(env, tileCount_x * tw + x,
+ 							tileCount_y * th + y, 0x00, 0x00, 0xFF);
 #endif
 				}
 			}
-// 			std::cout << tileCount_x << ", " << tileCount_y << std::endl;//_DEBUG_//
 		}
 	}
-// 	std::cout << "je suis gaussain blur" << std::endl;//_DEBUG_//
 }
 
 void					writeFile(t_env *env, const char *filePath)
