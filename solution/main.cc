@@ -333,9 +333,9 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 				{
 					if (tileCount_x == 0 && tileCount_y == 0)
 					{
-						data[x * width + y] = 0;
-						data[x * width + y + 1] = 0;
-						data[x * width + y + 2] = 0;
+						data[x * tw + y] = 0;
+						data[x * tw + y + 1] = 0;
+						data[x * tw + y + 2] = 0;
 					}
 				}
 			}
