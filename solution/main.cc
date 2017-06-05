@@ -5,11 +5,14 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cstdlib>
 #include <fcntl.h>
 #include <cmath>
+#include <iomanip>
 
 #define TAB			"\t"
-#define ERROR(x)	error((x), __FILE__, __LINE__)
+#define PRINT_W	40
+#define ERROR(x)			error((x), __FILE__, __LINE__)
 
 # define LIMIT_SCOL(x)	(x > 1 || x < 0) ? ((x > 1) ? 1 : 0) : x
 # define LIMIT_COL(x)	(x > 255. || x < 0.) ? ((x > 255.) ? 255. : 0.) : x
@@ -112,11 +115,37 @@ typedef struct			s_env
 	unsigned char		headerData[54];
 	unsigned char		*imgData;
 	size_t				imgSize;
+
+/*
+** Filter variables
+*/
+	float				**weightMap;
+	float				weightSum;
+	float				filterN;
+
+/*
+** tiles
+*/
+	int					tile_w;
+	int					tile_h;
+
 	int					junkBytes;
 	size_t				headerSize;
 	t_bmp_header		*bmp_header;
 	t_bmpinfo_header	*bmpinfo;
 }						t_env;
+
+void					proc_start(const char *x, const char *y = " ")
+{
+	std::cout << std::setw(PRINT_W) << std::left << std::string(x) + " " + y \
+				<< std::setw(PRINT_W) << std::right << "..." << std::endl;
+}
+
+void					proc_ok(const char *x, const char *y = " ")
+{
+	std::cout << std::setw(PRINT_W) << std::left << std::string(x) + " " + y \
+				<< std::setw(PRINT_W) << std::right << "OK" << std::endl;
+}
 
 static void				show_usage(void)
 {
@@ -136,10 +165,11 @@ static void				error(const char *msg = 0,
 
 /*
 ** TODO
-** Check parameters count
+** OPTIMIZATION
+** 1- set filter in its own tab
+** 2- limit gaussian inside the image bounderies
 ** Check that input_file has the bmp extension (maybe is not relevant)
 ** Check that the input_file exists
-**  Read BMP file
 */
 
 void					init_struct(t_bmp_header **bmp_header,
@@ -173,6 +203,13 @@ void					destroy(t_env **env)
 	destroy_struct(&env[0]->bmp_header, &env[0]->bmpinfo);
 	if (env[0]->imgData)
 		delete env[0]->imgData;
+	if (env[0]->weightMap)
+	{
+		for (int i = 0; i < env[0]->filterN; i++)
+			free(env[0]->weightMap[i]);
+		free(env[0]->weightMap);
+		env[0]->weightMap = NULL;
+	}
 	env[0]->imgData = NULL;
 	*env = NULL;
 }
@@ -193,9 +230,13 @@ void					set_structure(unsigned char *buf,
 	bmp_header->creator2 = *(uint16_t*)(buf + 8);
 	bmp_header->offset = *(uint32_t*)(buf + 10);
 
-#ifdef DEBUG
-	bmp_header->dump();//_DEBUG_//
-#endif
+/*
+**ifdef DEBUG
+*/
+	bmp_header->dump();
+/*
+**#endif
+*/
 
 /*
 ** BMP header info data parsing
@@ -218,15 +259,20 @@ void					set_structure(unsigned char *buf,
 	bmpinfo->n_colors = *(uint32_t*)(buf + 46);
 	bmpinfo->n_imp_colors = *(uint32_t*)(buf + 50);
 
-#ifdef DEBUG
+/*
+**ifdef DEBUG
+*/
 	bmpinfo->dump();
-#endif
+/*
+**#endif
+*/
 }
 
 void					readFile(t_env *env, const char *filePath)
 {
 	int					fd;
 	size_t				bufSize;
+
 
 	fd = 42;
 	if (!env)
@@ -241,6 +287,7 @@ void					readFile(t_env *env, const char *filePath)
 	}
 	init_struct(&env->bmp_header, &env->bmpinfo);
 	env->headerSize = bufSize;
+	proc_start("Reading file", filePath);
 	if (read(fd, (void*)env->headerData, bufSize) < 0)
 	{
 		perror("filePath while reading");
@@ -258,6 +305,7 @@ void					readFile(t_env *env, const char *filePath)
 		ERROR("");
 	}
 	close(fd);
+	proc_ok("Reading file", filePath);
 }
 
 static void				parse(t_env *env, float *kSize, int *tw, int *th,
@@ -283,13 +331,17 @@ static void				parse(t_env *env, float *kSize, int *tw, int *th,
 	if (*kSize < 0)
 		ERROR("tile kernelSize can't be a negative value");
 
-#ifdef DEBUG
+/*
+** #ifdef DEBUG
+*/
 	std::cout << "BLUR PARAM :" << std::endl;
 	std::cout << TAB << "kernel size = " << *kSize << std::endl;
 	std::cout << TAB << "tile width = " << *tw << std::endl;
 	std::cout << TAB << "tile height = " << *th << std::endl;
 	std::cout << "END" << std::endl;
-#endif
+/*
+** #endif
+*/
 }
 
 void					pixel_put(t_env *env,
@@ -341,16 +393,15 @@ static float			weight(int x, int y, float kSize)
 	float	kSquare;
 	float	a;
 
-// 	std::cout << "kSize = " << kSize << std::endl;
 	kSquare = 2. * pow(kSize, 2);
 	a = pow((float)x, 2) + pow((float)y, 2) / kSquare;
-// 	std::cout << "ksquare = " << kSquare << std::endl;//_DEBUG_//
-// 	std::cout << "a = " << a << std::endl;//_DEBUG_//
-// 	std::cout << "exp() = " << exp(-a) << std::endl;//_DEBUG_//
 	return (exp(-a));
 }
 
-void					blur(t_env *env, int x, int y, float kSize)
+/*
+** x_i && y_i are only used for optimization
+*/
+void					blur(t_env *env, int x, int y, int x_i, int y_i)
 {
 	uint8_t		r;
 	uint8_t		g;
@@ -373,27 +424,26 @@ void					blur(t_env *env, int x, int y, float kSize)
 	if (env->imgData && x >= 0 && x < env->bmpinfo->width
 			&& y >= 0 && y < env->bmpinfo->height)
 	{
-		s = 0;
+		s = env->weightSum;
 		n_r = 0;
 		n_g = 0;
 		n_b = 0;
-
-		/*
-		** n = kSize * (2...3) to avoid clipping
-		*/
-		n = kSize * 2;
+		n = env->filterN;
 		i = -n - 1;
 		while (++i < n)
 		{
 			j = -n - 1;
 			while (++j < n)
 			{
+				if (x_i + j < 0 || x_i + j >= env->tile_w
+						|| y_i + i < 0
+						|| y_i + i >= env->tile_h)
+					continue ;
 				getColor(env, x + j, y + i, &r, &g, &b);
-				wTmp = weight(j, i, kSize);
+				wTmp = env->weightMap[j + n][i + n];
 				n_r += wTmp * r;
 				n_g += wTmp * g;
 				n_b += wTmp * b;
-				s += wTmp;
 			}
 		}
 		n_r /= s;
@@ -401,8 +451,45 @@ void					blur(t_env *env, int x, int y, float kSize)
 		n_b /= s;
  		pixel_put(env, x, y, LIMIT_COL(n_r),
  					LIMIT_COL(n_g), LIMIT_COL(n_b));
-		getColor(env, x + j, y + i, &r, &g, &b);
 	}
+}
+
+void					setFilter(t_env *env, float kSize)
+{
+	int			i;
+	int			j;
+	int			n;
+	int			tmp;
+
+	if (!env)
+		ERROR("env set to NULL");
+	proc_start("Setting filter");
+/*
+** n = kSize * (2...3) to avoid clipping
+*/
+	env->filterN = kSize * 2;
+	n = env->filterN;
+	if (!(env->weightMap = (float**)malloc(sizeof(float*) * (n * 2 + 1))))
+		ERROR("env->weightMap BAD ALLOC");
+	tmp = -1;
+	while (++tmp < 2 * n)
+	{
+		if (!(env->weightMap[tmp]
+				= (float*)malloc(sizeof(float) * (n * 2 + 1))))
+			ERROR("env->weightMap BAD ALLOC");
+	}
+	i = -n - 1;
+	env->weightSum = 0;
+	while (++i < n)
+	{
+		j = -n - 1;
+		while (++j < n)
+		{
+			env->weightMap[j + n][i + n] = weight(j, i, kSize);
+			env->weightSum += env->weightMap[j + n][i + n];
+		}
+	}
+	proc_ok("Setting filter");
 }
 
 void					gaussianBlur(t_env *env, const char *kernel_sz,
@@ -426,8 +513,11 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 	if (!env)
 		ERROR("env set to NULL");
 	parse(env, &kSize, &tw, &th, kernel_sz, tile_w, tile_h);
+	setFilter(env, kSize);
 	width = env->bmpinfo->width;
 	height = env->bmpinfo->height;
+	env->tile_w = tw;
+	env->tile_h = th;
 	tileCount_w = (width / tw) + 1;
 	tileCount_h = (height / th) + 1;
 	tileCount_y = -1;
@@ -436,15 +526,17 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 		tileCount_x = -1;
 		while (++tileCount_x < tileCount_w)
 		{
+			proc_start("Blur", (std::string("tile [").c_str()
+						+ std::to_string(tileCount_x) + "]["
+						+ std::to_string(tileCount_y) + "]").c_str());
 			y = -1;
 			while (++y < th)
 			{
 				x = -1;
 				while (++x < tw)
 				{
-  					if (tileCount_x == 0 && tileCount_y == 0)
- 						blur(env, tileCount_x * tw + x,
- 								tileCount_y * th + y, kSize);
+					blur(env, tileCount_x * tw + x,
+							tileCount_y * th + y, x, y);
 #ifdef DEBUG
  					if (x == 0 || y == 0)
  						pixel_put(env, tileCount_x * tw + x,
@@ -452,6 +544,9 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 #endif
 				}
 			}
+			proc_ok("Blur", (std::string("tile [").c_str()
+						+ std::to_string(tileCount_x) + "]["
+						+ std::to_string(tileCount_y) + "]").c_str());
 		}
 	}
 }
@@ -471,6 +566,7 @@ void					writeFile(t_env *env, const char *filePath)
 		perror(filePath);
 		ERROR("");
 	}
+	proc_start("Writing file", filePath);
 	if ((write(fd, env->headerData, env->headerSize)) < 0)
 	{
 		perror(filePath);
@@ -482,6 +578,7 @@ void					writeFile(t_env *env, const char *filePath)
 		perror(filePath);
 		ERROR("");
 	}
+	proc_ok("Writing file", filePath);
 	close(fd);
 }
 
