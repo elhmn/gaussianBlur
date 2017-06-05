@@ -10,12 +10,12 @@
 #include <cmath>
 #include <iomanip>
 
-#define TAB			"\t"
-#define PRINT_W	40
+#define TAB					"\t"
+#define PRINT_W				40
 #define ERROR(x)			error((x), __FILE__, __LINE__)
 
-# define LIMIT_SCOL(x)	(x > 1 || x < 0) ? ((x > 1) ? 1 : 0) : x
-# define LIMIT_COL(x)	(x > 255. || x < 0.) ? ((x > 255.) ? 255. : 0.) : x
+# define LIMIT_SCOL(x)		(x > 1 || x < 0) ? ((x > 1) ? 1 : 0) : x
+# define LIMIT_COL(x)		(x > 255. || x < 0.) ? ((x > 255.) ? 255. : 0.) : x
 
 /*
 ** This constants are set by the compiler for test purpose
