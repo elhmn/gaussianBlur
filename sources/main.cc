@@ -1,14 +1,13 @@
 #include <iostream>
+#include <fstream>
 #include <cerrno>
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
 #include <cstdlib>
-#include <fcntl.h>
 #include <cmath>
 #include <iomanip>
+#include <exception>
 
 #define TAB					"\t"
 #define PRINT_W				40
@@ -112,8 +111,8 @@ typedef struct			s_bmpinfo_header
 
 typedef struct			s_env
 {
-	unsigned char		headerData[54];
-	unsigned char		*imgData;
+	char				headerData[54];
+	char				*imgData;
 	size_t				imgSize;
 
 /*
@@ -147,19 +146,19 @@ void					proc_ok(const char *x, const char *y = " ")
 				<< std::setw(PRINT_W) << std::right << "OK" << std::endl;
 }
 
-static void				show_usage(void)
+void					show_usage(void)
 {
 	std::cout << "usage : gbfilter input_file output_file kernel_size" \
 				<< " tile_width tile_height" << std::endl;
 }
 
-static void				error(const char *msg = 0,
+void					error(const char *msg = 0,
 								const char *file = 0, int line = 0)
 {
-	std::cout << "Error : " << file << " : " << line;
+	std::cerr << "Error : " << file << " : " << line;
 	if (msg)
-		std::cout << " : " << msg;
-	std::cout << std::endl;
+		std::cerr << " : " << msg;
+	std::cerr << std::endl;
 	exit(-1);
 }
 
@@ -214,7 +213,7 @@ void					destroy(t_env **env)
 	*env = NULL;
 }
 
-void					set_structure(unsigned char *buf,
+void					set_structure(char *buf,
 									t_bmp_header *bmp_header,
 									t_bmpinfo_header *bmpinfo)
 {
@@ -225,6 +224,8 @@ void					set_structure(unsigned char *buf,
 ** BMP header data parsing
 */
 	memcpy(bmp_header->type, buf, 2);
+	if (strcmp((char*)bmp_header->type, "BM"))
+		ERROR("This program only handle BM file");
 	bmp_header->file_sz = *(uint32_t*)(buf + 2);
 	bmp_header->creator1 = *(uint16_t*)(buf + 6);
 	bmp_header->creator2 = *(uint16_t*)(buf + 8);
@@ -243,7 +244,14 @@ void					set_structure(unsigned char *buf,
 */
 	bmpinfo->header_sz = buf[14];
 	if (bmpinfo->header_sz != 40)
-		ERROR("BMP image info header > 40");
+	{
+		std::cout << "Caution your file header info has more than 40 bytes ! " \
+		<< std::endl << "Continue y/n ?" << std::endl;
+		std::string s;
+		std::cin >> s;
+		if (s != "y" && s != "yes")
+			exit(0);
+	}
 	bmpinfo->width = *(int32_t*)(buf + 18);
 	bmpinfo->height = *(int32_t*)(buf + 22);
 	bmpinfo->nplanes = *(uint16_t*)(buf + 26);
@@ -268,47 +276,8 @@ void					set_structure(unsigned char *buf,
 */
 }
 
-void					readFile(t_env *env, const char *filePath)
-{
-	int					fd;
-	size_t				bufSize;
 
-
-	fd = 42;
-	if (!env)
-		ERROR("env set NULL");
-	bufSize = sizeof(env->headerData);
-	if (!filePath)
-		ERROR("filePath set to NULL");
-	if ((fd = open(filePath, O_RDONLY)) < 0)
-	{
-		perror(filePath);
-		ERROR("");
-	}
-	init_struct(&env->bmp_header, &env->bmpinfo);
-	env->headerSize = bufSize;
-	proc_start("Reading file", filePath);
-	if (read(fd, (void*)env->headerData, bufSize) < 0)
-	{
-		perror("filePath while reading");
-		ERROR("");
-	}
-	set_structure(env->headerData, env->bmp_header, env->bmpinfo);
-	env->junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
- 	bufSize = (env->bmpinfo->width * 3 + env->junkBytes) * env->bmpinfo->height;
-	env->imgSize = bufSize;
-	if (!(env->imgData = new unsigned char[bufSize]))
-		ERROR("BAD ALLOC");
-	if (pread(fd, (void*)env->imgData, bufSize, env->bmp_header->offset) < 0)
-	{
-		perror("filePath while reading");
-		ERROR("");
-	}
-	close(fd);
-	proc_ok("Reading file", filePath);
-}
-
-static void				parse(t_env *env, float *kSize, int *tw, int *th,
+void						parse(t_env *env, float *kSize, int *tw, int *th,
 							const char *kernel_sz, const char *tile_w,
 							const char *tile_h)
 
@@ -551,35 +520,72 @@ void					gaussianBlur(t_env *env, const char *kernel_sz,
 	}
 }
 
+void					readFile(t_env *env, const char *filePath)
+{
+	std::ifstream		file;
+	size_t				bufSize;
+
+
+	if (!env)
+		ERROR("env set NULL");
+	if (!filePath)
+		ERROR("filePath set to NULL");
+	bufSize = sizeof(env->headerData);
+	file.exceptions(std::ifstream::badbit);
+	try
+	{
+		file.open(filePath, std::ios::binary);
+		if (file.is_open())
+		{
+			init_struct(&env->bmp_header, &env->bmpinfo);
+			env->headerSize = bufSize;
+			proc_start("Reading file", filePath);
+			file.read(env->headerData, bufSize);
+			set_structure(env->headerData, env->bmp_header, env->bmpinfo);
+			env->junkBytes = 4 - ((env->bmpinfo->width * 3) % 4);
+			bufSize = (env->bmpinfo->width * 3 + env->junkBytes)
+						* env->bmpinfo->height;
+			env->imgSize = bufSize;
+			if (!(env->imgData = new char[bufSize]))
+				ERROR("BAD ALLOC");
+			file.seekg(env->bmp_header->offset, std::ios::beg);
+			file.read (env->imgData, bufSize);
+			file.close();
+		}
+	}
+	catch (const std::ifstream::failure& e)
+	{
+		ERROR("Exception opening/reading/closing file");
+	}
+	proc_ok("Reading file", filePath);
+}
+
 void					writeFile(t_env *env, const char *filePath)
 {
-	int					fd;
+	std::ofstream		file;
 
-	fd = 42;
 	if (!env)
 		ERROR("env set to NULL");
 	if (!filePath)
 		ERROR("filePath set to NULL");
-	if ((fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC,
-				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0)
+	file.exceptions(std::ofstream::badbit);
+	try
 	{
-		perror(filePath);
-		ERROR("");
+		file.open(filePath, std::ios::binary | std::ios::ate);
+		if (file.is_open())
+		{
+			proc_start("Writing file", filePath);
+			file.write ((char*)env->headerData, env->headerSize);
+			file.seekp(env->bmp_header->offset, std::ios::beg);
+			file.write ((char*)env->imgData, env->imgSize);
+			file.close();
+		}
 	}
-	proc_start("Writing file", filePath);
-	if ((write(fd, env->headerData, env->headerSize)) < 0)
+	catch (const std::ofstream::failure& e)
 	{
-		perror(filePath);
-		ERROR("");
-	}
-	if ((pwrite(fd, env->imgData, env->imgSize,
-			env->bmp_header->offset)) < 0)
-	{
-		perror(filePath);
-		ERROR("");
+		ERROR("Exception opening/reading/closing file");
 	}
 	proc_ok("Writing file", filePath);
-	close(fd);
 }
 
 int						main(int ac, char **av)
