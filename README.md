@@ -32,8 +32,10 @@ How to use :
 
 ### After Blur ###
 
+### kernel = 20  w = 100 h = 50 ###
+
 ![](./img/image_rgb_blured.bmp)
 
-
+### kernel = 10  w = 400 h = 400 ###
 
 ![](./img/image_rgb_blured_2.bmp)
