@@ -33,3 +33,7 @@ How to use :
 ### After Blur ###
 
 ![](./img/image_rgb_blured.bmp)
+
+
+
+![](./img/image_rgb_blured_2.bmp)
