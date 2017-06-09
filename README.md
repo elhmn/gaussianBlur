@@ -1,3 +1,5 @@
+# 24B Bitmap reader and gaussian blur filter #
+
 How to use :
 
 	1- Compile :
@@ -23,4 +25,11 @@ How to use :
 			tile_width		set the width of the tile
 			tile_height		set the height of the tile
 
-THANK YOU That was fun ! :)
+### Before Blur ###
+
+![](./img/image_rgb.bmp)
+
+
+### After Blur ###
+
+![](./img/image_rgb_blured.bmp)
