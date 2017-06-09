@@ -1,4 +1,4 @@
-# 24B Bitmap reader and gaussian blur filter #
+# 24B Bitmap reader/writer and gaussian blur filter #
 
 How to use :
 
